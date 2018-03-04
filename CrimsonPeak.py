@@ -11,13 +11,14 @@ import os
 
 os.environ['PYTHONIOENCODING'] = 'utf8'
 
-doc_document_name = ''
+doc_document_name = ' '
 doc_document_create_Date = ''
-doc_author = ''
-doc_title = ''
-doc_content = ''
-doc_text_data = ''
+doc_author = ' '
+doc_title = ' '
+doc_content = ' '
+doc_text_data = ' '
 newlist = []
+doc_title = ' '
 
 ES_HOST = {"host": "localhost", "port": 9200}
 
@@ -64,9 +65,12 @@ def strings_remove_non_ascii(input_string):
 
 
 def tika_parser(file_name):
+    global doc_title,doc_last_author, doc_text_data, doc_author, doc_document_name, doc_document_create_Date
     tika_text_ascii = ' '
     tessaract_output = ' '
     s = {}
+    re_auth = ''
+    re_unser_zeichen = ''
 
     try:
         parsed_text = parser.from_file(file_name)
@@ -101,25 +105,43 @@ def tika_parser(file_name):
         # print(parsed_text["content"])
         # tika_text = re.sub('\s+', ' ', parsed_text["content"]).strip()
         tika_text_ascii = strings_remove_non_ascii(parsed_text["content"])
-        print('tika_text_ascii is ******')
-    #  print(tika_text_ascii)
+        print('tika_text_ascii is' + tika_text_ascii)
 
-    # tessaract_parser(filename)
+        s['doc_title'] = doc_title.lower()
+        s['doc_author'] = doc_author.lower() + doc_last_author.lower()
+        s['doc_create_date'] = str(doc_document_create_Date)
 
     except:
-        print('Errors in parsing file :' + file_name)
+        print('Errors in parsing file  by Tika parser: ' + file_name)
 
-    if tika_text_ascii == 'None' or tika_text_ascii == '' or tika_text_ascii is None:
+    if tika_text_ascii == 'None' or tika_text_ascii == '' or tika_text_ascii is None or len(tika_text_ascii) < 150:
         tessaract_output = tessaract_parser(filename)
         print(' testing only')
 
     doc_text_data = str(tika_text_ascii) + tessaract_output
-    print(doc_text_data)
 
-    s['doc_title'] = doc_title
-    s['doc_author'] = doc_author + doc_last_author
-    s['doc_create_date'] = str(doc_document_create_Date)
+    doc_text_clean = re.sub('[^a-zA-Z0-9 \n\.]', '', doc_text_data).lower()
+
+    # print(doc_text_clean)
+
+
     s['doc_text'] = doc_text_data
+    s['doc_text_clean'] = doc_text_clean
+    s['doc_title_clean'] = re.sub('[^a-zA-Z0-9 \n\.]', ' ', doc_title).lower()
+
+    try:
+        author_from = re.findall('autor *: *[a-z ]*', doc_text_data)[0]
+        print(author_from)
+        re_auth = re.sub('^:?[a-z]*', '', author_from)
+
+        unser_zeichen = re.findall('unser zeichen *: *[0-9.]* ?', doc_text_data)[0]
+        re_unser_zeichen = re.sub('^:?[0-9.]*', '', unser_zeichen)
+
+    except:
+        print('passing along')
+
+    s['doc_meta_author'] = re_auth
+    s['doc_meta_zeichen'] = re_unser_zeichen
 
     newlist.append(s)
 
@@ -155,16 +177,16 @@ def tessaract_parser(file_name):
 
             print('OCR processing 90')
             tessaract_string_90d = pytesseract.image_to_string(tmp_img.rotate(90, expand=1).resize(new_size))
-            print('width: %d - height: %d' % tmp_img.rotate(90).size)
+        #    print('width: %d - height: %d' % tmp_img.rotate(90).size)
             # dst_im.save( "90-" + filename )
 
             print('OCR processing 180')
             tessaract_string_180d = pytesseract.image_to_string(tmp_img.rotate(180))
-            print('width: %d - height: %d' % tmp_img.rotate(180).size)
+       #     print('width: %d - height: %d' % tmp_img.rotate(180).size)
 
             print('OCR processing 270')
-            tessaract_string_270d = pytesseract.image_to_string(tmp_img.rotate(270))
-            print('width: %d - height: %d' % tmp_img.rotate(270).size)
+            tessaract_string_270d = pytesseract.image_to_string(tmp_img.rotate(270, expand = 1).resize(new_size))
+        #    print('width: %d - height: %d' % tmp_img.rotate(270).size)
 
             print('Completed Tessaract Processing')
 
@@ -232,7 +254,16 @@ def tessaract_parser(file_name):
             # print(' CALCULATED TEXT OUTPUT :')
             # print(OCR_output_string)
 
-            tessaract_return_string = tessaract_return_string + tessaract_OCR_String + tessaract_OCR_String_90d + tessaract_OCR_String_180d + tessaract_OCR_String_270d
+            tessaract_return_string = (
+                        tessaract_return_string + tessaract_OCR_String + tessaract_OCR_String_90d + tessaract_OCR_String_180d + tessaract_OCR_String_270d).lower()
+
+            # print(tessaract_return_string)
+            # print('Author is : ')
+            # author_from = re.findall('autor *: *[a-z ]*', tessaract_return_string)[0]
+            # print('author every page : ')
+            # print(author_from)
+            # re_auth = re.sub('^:?[a-z]*', '',author_from)
+            # print(re_auth)
 
     shutil.rmtree(rootdir + '/tmp/')
     os.mkdir(rootdir + '/tmp/')
@@ -278,7 +309,7 @@ for subdir, dirs, files in os.walk(rootdir):
     for file in files:
         filename = os.path.join(subdir, file)
         print(filename)
-        if filename.endswith('.docx'):
+        if filename.endswith('.xlsm') or filename.endswith('.docx'):
             doc_document_name = filename
             tika_parser(filename)
             print(' ')
