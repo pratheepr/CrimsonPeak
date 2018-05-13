@@ -19,10 +19,15 @@ doc_content = ' '
 doc_text_data = ' '
 newlist = []
 doc_title = ' '
+fone_number_list = ' '
 
 ES_HOST = {"host": "localhost", "port": 9200}
 
-INDEX_NAME = 'ocr_b2b2018'
+#b2b index
+#INDEX_NAME = 'ocr_b2b2018'
+
+INDEX_NAME = 'ocr_pratheep'
+
 TYPE_NAME = 'docx'
 
 
@@ -65,12 +70,14 @@ def strings_remove_non_ascii(input_string):
 
 
 def tika_parser(file_name):
-    global doc_title,doc_last_author, doc_text_data, doc_author, doc_document_name, doc_document_create_Date
+    global doc_title, doc_last_author, doc_text_data, doc_author, doc_document_name, doc_document_create_Date
     tika_text_ascii = ' '
     tessaract_output = ' '
     s = {}
     re_auth = ''
     re_unser_zeichen = ''
+
+    doc_title = file_name
 
     try:
         parsed_text = parser.from_file(file_name)
@@ -91,40 +98,43 @@ def tika_parser(file_name):
         if "Creation-Date" in doc_metadata.keys():
             doc_document_create_Date = doc_metadata["Creation-Date"]
         else:
-            doc_document_create_Date = ' '
+            doc_document_create_Date = '9999-12-31T01:00:00Z'
 
         if (len(doc_document_create_Date) == 2):
             doc_document_create_Date = doc_document_create_Date[0]
 
+        if "content" in parsed_text.keys():
+            tika_text_ascii = strings_remove_non_ascii(parsed_text["content"])
+            print('tika_text_ascii is' + str(tika_text_ascii))
+
         # doc_title = parsed_text["metadata"]["title"]
-        doc_title = file_name
 
         print(' Document Metadata *****')
         print(doc_title + ' ' + doc_author + doc_last_author + ' ' + str(doc_document_create_Date) + ' ')
 
         # print(parsed_text["content"])
         # tika_text = re.sub('\s+', ' ', parsed_text["content"]).strip()
-        tika_text_ascii = strings_remove_non_ascii(parsed_text["content"])
-        print('tika_text_ascii is' + tika_text_ascii)
-
-        s['doc_title'] = doc_title.lower()
-        s['doc_author'] = doc_author.lower() + doc_last_author.lower()
-        s['doc_create_date'] = str(doc_document_create_Date)
 
     except:
         print('Errors in parsing file  by Tika parser: ' + file_name)
+
 
     if tika_text_ascii == 'None' or tika_text_ascii == '' or tika_text_ascii is None or len(tika_text_ascii) < 150:
         tessaract_output = tessaract_parser(filename)
         print(' testing only')
 
-    doc_text_data = str(tika_text_ascii) + tessaract_output
+ #   if (file_name.endswith('.jpg')):
+ #       tessaract_output = jpg_parser(file_name)
+
+    doc_text_data = str(tika_text_ascii).lower() + tessaract_output.lower()
 
     doc_text_clean = re.sub('[^a-zA-Z0-9 \n\.]', '', doc_text_data).lower()
 
     # print(doc_text_clean)
 
-
+    s['doc_title'] = doc_title.lower()
+    s['doc_author'] = doc_author.lower() + doc_last_author.lower()
+    s['doc_create_date'] = str(doc_document_create_Date)
     s['doc_text'] = doc_text_data
     s['doc_text_clean'] = doc_text_clean
     s['doc_title_clean'] = re.sub('[^a-zA-Z0-9 \n\.]', ' ', doc_title).lower()
@@ -133,17 +143,77 @@ def tika_parser(file_name):
         author_from = re.findall('autor *: *[a-z ]*', doc_text_data)[0]
         print(author_from)
         re_auth = re.sub('^:?[a-z]*', '', author_from)
-
-        unser_zeichen = re.findall('unser zeichen *: *[0-9.]* ?', doc_text_data)[0]
-        re_unser_zeichen = re.sub('^:?[0-9.]*', '', unser_zeichen)
-
     except:
-        print('passing along')
+        author_from =' '
+        print('Author not found')
+
+    try:
+        unser_zeichen = re.findall('unser zeichen *: *[0-9.]* ?', doc_text_data)[0]
+        print(unser_zeichen)
+        re_unser_zeichen = re.sub('^:?[0-9.]*', '', unser_zeichen)
+    except:
+        re_unser_zeichen =' '
+        print('Zeichen not found')
+
+
+    try:
+        all_phone_numbers = re.findall("(0041|041|\+41|\+\+41|41)?(0|\(0\)\s*)?\s*([1-9]\d{1})\s*(\d{3})\s*(\d{2})\s*(\d{2})\s?",doc_text_data)
+        fone_number_list = ' '
+        for fone in all_phone_numbers:
+            #print(''.join(fone))
+            fone_number_list = fone_number_list + ' ' + ''.join(fone)
+    except:
+        print('no fone numbers')
+        fone_number_list = ' '
+
 
     s['doc_meta_author'] = re_auth
     s['doc_meta_zeichen'] = re_unser_zeichen
+    s['doc_fone_numbers'] = fone_number_list
 
     newlist.append(s)
+
+def jpg_parser(file_name):
+
+    jpg_return_string = ''
+    tmp_img = Image.open(file_name)
+    tmp_img.save('tmp.png')
+
+
+    jpg_string_base = pytesseract.image_to_string(file_name)
+    print('width: %d - height: %d' % tmp_img.size)
+
+    width, height = tmp_img.size
+
+    new_size = height, width
+    # dst_im = Image.new("RGBA")
+    # dst_im.save( "00-" + filename )
+
+    print('OCR processing 90')
+    jpg_string_90d = pytesseract.image_to_string(tmp_img.rotate(90, expand=1).resize(new_size))
+    #    print('width: %d - height: %d' % tmp_img.rotate(90).size)
+    # dst_im.save( "90-" + filename )
+
+    print('OCR processing 180')
+    jpg_string_180d = pytesseract.image_to_string(tmp_img.rotate(180))
+    #     print('width: %d - height: %d' % tmp_img.rotate(180).size)
+
+    print('OCR processing 270')
+    jpg_string_270d = pytesseract.image_to_string(tmp_img.rotate(270, expand=1).resize(new_size))
+    #    print('width: %d - height: %d' % tmp_img.rotate(270).size)
+
+    print('Completed jog Processing')
+
+    #            P = pytesseract.image_to_string(img.rotate(90))
+    jpg_OCR_String = strings_remove_non_ascii(jpg_string_base)
+    jpg_OCR_String_90d = strings_remove_non_ascii(jpg__string_90d)
+    jpg_OCR_String_180d = strings_remove_non_ascii(jpg_string_180d)
+    jpg_OCR_String_270d = strings_remove_non_ascii(jpg_string_270d)
+
+    jpg_return_string = (jpg_return_string + jpg_OCR_String + jpg_OCR_String_90d + jpg_OCR_String_180d + jpg_OCR_String_270d).lower()
+
+
+
 
 
 def tessaract_parser(file_name):
@@ -163,98 +233,102 @@ def tessaract_parser(file_name):
             print('Tesseract processing')
             print(filename)
 
-            tmp_img = Image.open(filename)
+            if file == 'img-000.png' or file =='img-002.png' or file=='img-003.png' or file == 'img-004.png' or file == 'img-001.png' :
 
-            print('OCR processing 0')
-            tessaract_string_base = pytesseract.image_to_string(tmp_img)
-            print('width: %d - height: %d' % tmp_img.size)
+                tmp_img = Image.open(filename)
 
-            width, height = tmp_img.size
+                print('OCR processing 0')
+                tessaract_string_base = pytesseract.image_to_string(tmp_img)
+                print('width: %d - height: %d' % tmp_img.size)
 
-            new_size = height, width
-            # dst_im = Image.new("RGBA")
-            # dst_im.save( "00-" + filename )
+                width, height = tmp_img.size
 
-            print('OCR processing 90')
-            tessaract_string_90d = pytesseract.image_to_string(tmp_img.rotate(90, expand=1).resize(new_size))
-        #    print('width: %d - height: %d' % tmp_img.rotate(90).size)
-            # dst_im.save( "90-" + filename )
+                new_size = height, width
+                # dst_im = Image.new("RGBA")
+                # dst_im.save( "00-" + filename )
 
-            print('OCR processing 180')
-            tessaract_string_180d = pytesseract.image_to_string(tmp_img.rotate(180))
-       #     print('width: %d - height: %d' % tmp_img.rotate(180).size)
+                print('OCR processing 90')
+                tessaract_string_90d = pytesseract.image_to_string(tmp_img.rotate(90, expand=1).resize(new_size))
+                #    print('width: %d - height: %d' % tmp_img.rotate(90).size)
+                # dst_im.save( "90-" + filename )
 
-            print('OCR processing 270')
-            tessaract_string_270d = pytesseract.image_to_string(tmp_img.rotate(270, expand = 1).resize(new_size))
-        #    print('width: %d - height: %d' % tmp_img.rotate(270).size)
+                print('OCR processing 180')
+                tessaract_string_180d = pytesseract.image_to_string(tmp_img.rotate(180))
+                #     print('width: %d - height: %d' % tmp_img.rotate(180).size)
 
-            print('Completed Tessaract Processing')
+                print('OCR processing 270')
+                tessaract_string_270d = pytesseract.image_to_string(tmp_img.rotate(270, expand=1).resize(new_size))
+                #    print('width: %d - height: %d' % tmp_img.rotate(270).size)
 
-            #            P = pytesseract.image_to_string(img.rotate(90))
-            tessaract_OCR_String = strings_remove_non_ascii(tessaract_string_base)
-            tessaract_OCR_String_90d = strings_remove_non_ascii(tessaract_string_90d)
-            tessaract_OCR_String_180d = strings_remove_non_ascii(tessaract_string_180d)
-            tessaract_OCR_String_270d = strings_remove_non_ascii(tessaract_string_270d)
+                print('Completed Tessaract Processing')
+                print('Completed Tessaract Processing')
 
-            lang_score_0 = detect_language(tessaract_OCR_String)
-            lang_score_90 = detect_language(tessaract_OCR_String_90d)
-            lang_score_180 = detect_language(tessaract_OCR_String_180d)
-            lang_score_270 = detect_language(tessaract_OCR_String_270d)
+                #            P = pytesseract.image_to_string(img.rotate(90))
+                tessaract_OCR_String = strings_remove_non_ascii(tessaract_string_base)
+                tessaract_OCR_String_90d = strings_remove_non_ascii(tessaract_string_90d)
+                tessaract_OCR_String_180d = strings_remove_non_ascii(tessaract_string_180d)
+                tessaract_OCR_String_270d = strings_remove_non_ascii(tessaract_string_270d)
 
-            text_english_score = lang_score_0['english'] + lang_score_90['english'] + lang_score_180['english'] + \
-                                 lang_score_270['english']
-            text_german_score = lang_score_0['german'] + lang_score_90['german'] + lang_score_180['german'] + \
-                                lang_score_270['german']
-            text_french_score = lang_score_0['french'] + lang_score_90['french'] + lang_score_180['french'] + \
-                                lang_score_270['french']
-            text_italian_score = lang_score_0['italian'] + lang_score_90['italian'] + lang_score_180['italian'] + \
-                                 lang_score_270['italian']
+                lang_score_0 = detect_language(tessaract_OCR_String)
+                lang_score_90 = detect_language(tessaract_OCR_String_90d)
+                lang_score_180 = detect_language(tessaract_OCR_String_180d)
+                lang_score_270 = detect_language(tessaract_OCR_String_270d)
 
-            if text_english_score > text_german_score and text_english_score > text_german_score and text_english_score > text_italian_score:
-                doc_lang = 'english'
+                text_english_score = lang_score_0['english'] + lang_score_90['english'] + lang_score_180['english'] + \
+                                     lang_score_270['english']
+                text_german_score = lang_score_0['german'] + lang_score_90['german'] + lang_score_180['german'] + \
+                                    lang_score_270['german']
+                text_french_score = lang_score_0['french'] + lang_score_90['french'] + lang_score_180['french'] + \
+                                    lang_score_270['french']
+                text_italian_score = lang_score_0['italian'] + lang_score_90['italian'] + lang_score_180['italian'] + \
+                                     lang_score_270['italian']
 
-            if text_german_score > text_english_score and text_german_score > text_french_score and text_german_score > text_italian_score:
-                doc_lang = 'german'
+                if text_english_score > text_german_score and text_english_score > text_german_score and text_english_score > text_italian_score:
+                    doc_lang = 'english'
 
-            if text_french_score > text_english_score and text_french_score > text_german_score and text_french_score > text_italian_score:
-                doc_lang = 'french'
+                if text_german_score > text_english_score and text_german_score > text_french_score and text_german_score > text_italian_score:
+                    doc_lang = 'german'
 
-            if text_italian_score > text_english_score and text_italian_score > text_german_score and text_italian_score > text_french_score:
-                doc_lang = 'italian'
+                if text_french_score > text_english_score and text_french_score > text_german_score and text_french_score > text_italian_score:
+                    doc_lang = 'french'
 
-            text_0_lang = max(lang_score_0, key=lang_score_0.get)
-            text_90_lang = max(lang_score_90, key=lang_score_90.get)
-            text_180_lang = max(lang_score_180, key=lang_score_180.get)
-            text_270_lang = max(lang_score_270, key=lang_score_270.get)
+                if text_italian_score > text_english_score and text_italian_score > text_german_score and text_italian_score > text_french_score:
+                    doc_lang = 'italian'
 
-            OCR_output_string = ''
+                text_0_lang = max(lang_score_0, key=lang_score_0.get)
+                text_90_lang = max(lang_score_90, key=lang_score_90.get)
+                text_180_lang = max(lang_score_180, key=lang_score_180.get)
+                text_270_lang = max(lang_score_270, key=lang_score_270.get)
 
-            if doc_lang == text_0_lang:
-                OCR_output_string = tessaract_OCR_String
-            elif doc_lang == text_90_lang:
-                OCR_output_string = tessaract_OCR_String_90d
-            elif doc_lang == text_180_lang:
-                OCR_output_string = tessaract_OCR_String_180d
-            elif doc_lang == text_270_lang:
-                OCR_output_string = tessaract_OCR_String_270d
-            else:
                 OCR_output_string = ''
 
-            # print('Tessaract 0 Degrees: ')
-            # print(tessaract_OCR_String)
-            # print('Tessaract 90 Degrees: ')
-            # print(tessaract_OCR_String_90d)
-            # print('Tessaract 180 Degrees: ')
-            # print(tessaract_OCR_String_180d)
-            # print('Tessaract 270 Degrees: ')
-            # print(tessaract_OCR_String_270d)
+                # if doc_lang == text_0_lang:
+                #     OCR_output_string = tessaract_OCR_String
+                # elif doc_lang == text_90_lang:
+                #     OCR_output_string = tessaract_OCR_String_90d
+                # elif doc_lang == text_180_lang:
+                #     OCR_output_string = tessaract_OCR_String_180d
+                # elif doc_lang == text_270_lang:
+                #     OCR_output_string = tessaract_OCR_String_270d
+                # else:
+                #     OCR_output_string = ''
 
-            print('Tesseract Ending')
+                # print('Tessaract 0 Degrees: ')
+                # print(tessaract_OCR_String)
+                # print('Tessaract 90 Degrees: ')
+                # print(tessaract_OCR_String_90d)
+                # print('Tessaract 180 Degrees: ')
+                # print(tessaract_OCR_String_180d)
+                # print('Tessaract 270 Degrees: ')
+                # print(tessaract_OCR_String_270d)
 
-            # print(' CALCULATED TEXT OUTPUT :')
-            # print(OCR_output_string)
+                print('Tesseract Ending')
 
-            tessaract_return_string = (
+                # print(' CALCULATED TEXT OUTPUT :')
+                # print(OCR_output_string)
+
+
+                tessaract_return_string = (
                         tessaract_return_string + tessaract_OCR_String + tessaract_OCR_String_90d + tessaract_OCR_String_180d + tessaract_OCR_String_270d).lower()
 
             # print(tessaract_return_string)
@@ -300,7 +374,10 @@ def Init_Elasticsearch():
 
 es = Init_Elasticsearch()
 
-rootdir = '/Users/pratheepravysandirane/Downloads/testDocs/'
+
+#rootdir = '/Users/pratheepravysandirane/Downloads/testDocs/'
+
+rootdir = '/Users/pratheepravysandirane/Google Drive/IFTTT/iOS Photos/Bills2018'
 
 # make an empty dict to store new dict data
 counter = 1
@@ -313,7 +390,13 @@ for subdir, dirs, files in os.walk(rootdir):
             doc_document_name = filename
             tika_parser(filename)
             print(' ')
+
         if filename.endswith('.pdf'):
+            doc_document_name = filename
+            tika_parser(filename)
+            print(' ')
+
+        if filename.endswith('.jpg'):
             doc_document_name = filename
             tika_parser(filename)
             print(' ')
